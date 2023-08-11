@@ -21,16 +21,16 @@ fn main() -> Result<(), io::Error> {
         let ip_header_size = 20; // min ip header size
 
         match etherparse::Ipv4HeaderSlice::from_slice(&buf[ip_header_offset..nbytes]) {
-            Ok(packet) => {
-                println!("{:?}\n", packet.to_header());
+            Ok(ip_header) => {
+                println!("{:?}\n", ip_header.to_header());
                 let ip_buf = &buf[ip_header_offset..nbytes];
 
-                let packet_version = packet.version();
-                let src = packet.source();
-                let dst = packet.destination();
-                let proto = packet.protocol();
-                let t_len = packet.total_len();
-                let p_len = packet.payload_len();
+                let packet_version = ip_header.version();
+                let src = ip_header.source();
+                let dst = ip_header.destination();
+                let proto = ip_header.protocol();
+                let t_len = ip_header.total_len();
+                let p_len = ip_header.payload_len();
                 if proto != TCP_PROTOCOL {
                     println!("skipping a non tcp packet, proto: {:?}", proto);
                     continue;
@@ -41,18 +41,26 @@ fn main() -> Result<(), io::Error> {
 
                 // println!("{:x?}", ip_buf);
 
-                match etherparse::TcpHeader::from_slice(&ip_buf[ip_header_size..]) {
+                match etherparse::TcpHeaderSlice::from_slice(&ip_buf[ip_header_size..]) {
                     Ok(tcp_header) => {
-                        println!("{:?}\n", tcp_header);
+                        println!("{:?}\n", tcp_header.to_header());
+
+                        eprintln!(
+                            "{:?}->{:?} {}b of tcp to port {}",
+                            src,
+                            dst,
+                            tcp_header.slice().len(),
+                            tcp_header.destination_port()
+                        )
                     }
                     Err(e) => eprintln!("tcp header parse error: {:?}", e),
                 }
 
-                eprintln!(
-                    "read {} bytes (flags: {:x}, e_proto: {:x}) v: {:?}, src: {:?}, dst: {:?}, proto: {:?}, t_len: {:?},p_len: {:?}\n\n",
-                    nbytes - 4,
-                    ether_flags, ether_proto, packet_version, src, dst, proto, t_len, p_len
-                );
+                // eprintln!(
+                //     "read {} bytes (flags: {:x}, e_proto: {:x}) v: {:?}, src: {:?}, dst: {:?}, proto: {:?}, t_len: {:?},p_len: {:?}\n\n",
+                //     nbytes - 4,
+                //     ether_flags, ether_proto, packet_version, src, dst, proto, t_len, p_len
+                // );
             }
             Err(e) => eprintln!("ignoring a packet {:?}", e),
         }
