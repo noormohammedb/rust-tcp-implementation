@@ -15,7 +15,7 @@ struct Quad {
 fn main() -> Result<(), io::Error> {
     let mut connections: HashMap<Quad, tcp_state::State> = Default::default();
 
-    let nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
+    let mut nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
     let mut buf = [0u8; 1504];
 
     loop {
@@ -66,13 +66,13 @@ fn main() -> Result<(), io::Error> {
                                 dst: (dst.into(), tcph.destination_port()),
                             })
                             .or_default()
-                            .on_packet(iph, tcph, &buf[data_start..nbytes]);
+                            .on_packet(&mut nic, iph, tcph, &buf[data_start..nbytes])?;
                     }
                     Err(e) => eprintln!("tcp header parse error: {:?}", e),
                 }
 
                 // eprintln!(
-                //     "read {} bytes (flags: {:x}, e_proto: {:x}) v: {:?}, src: {:?}, dst: {:?}, proto: {:?}, t_len: {:?},p_len: {:?}\n\n",
+                //     "read {} bytes (flags: {:?}, e_proto: {:?}) v: {:?}, src: {:?}, dst: {:?}, proto: {:?}, t_len: {:?},p_len: {:?}\n\n",
                 //     nbytes - 4,
                 //     ether_flags, ether_proto, packet_version, src, dst, proto, t_len, p_len
                 // );

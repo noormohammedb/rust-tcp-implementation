@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 etherparse = "0.13.0"
+log = "0.4.20"
 tun-tap = "0.1.3"
