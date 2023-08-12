@@ -14,6 +14,5 @@ $PWD/target/release/trust &
 pid=$!
 sudo ip addr add 192.168.0.1/24 dev tun0 
 sudo ip link set up dev tun0
-sudo arp -s 192.168.0.2 02:38:03:dd:c7:30
 trap "kill $pid" INT TERM
 wait $pid

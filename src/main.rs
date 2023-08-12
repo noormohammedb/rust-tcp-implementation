@@ -5,9 +5,9 @@ const ETHERTYPE_IPV4: u16 = 0x0800;
 const TCP_PROTOCOL: u8 = 0x06;
 
 fn main() -> Result<(), io::Error> {
-    let nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tap)?;
+    let nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
     // let mut buf = [0u8; 1504];
-    let mut buf = [0u8; 1522]; // Eth-II/802.3 with 802.1Q tagging (stackoverflow)
+    let mut buf = [0u8; 1504];
 
     loop {
         let nbytes = nic.recv(&mut buf[..])?;
@@ -17,20 +17,21 @@ fn main() -> Result<(), io::Error> {
             // only ipv4
             continue;
         }
-        let ip_header_offset = 18; // size of the ethernet
-        let ip_header_size = 20; // min ip header size
+        let ip_hr_of = 4; // size of prefixe flags
+        let ip_hr_sz = 20; // min ip header size
 
-        match etherparse::Ipv4HeaderSlice::from_slice(&buf[ip_header_offset..nbytes]) {
-            Ok(ip_header) => {
-                println!("{:?}\n", ip_header.to_header());
-                let ip_buf = &buf[ip_header_offset..nbytes];
+        match etherparse::Ipv4HeaderSlice::from_slice(&buf[ip_hr_of..nbytes]) {
+            Ok(iph) => {
+                println!("{:?}\n", iph.to_header());
+                // let ip_buf = &buf[ip_hr_of..nbytes];
 
-                let packet_version = ip_header.version();
-                let src = ip_header.source();
-                let dst = ip_header.destination();
-                let proto = ip_header.protocol();
-                let t_len = ip_header.total_len();
-                let p_len = ip_header.payload_len();
+                let packet_version = iph.version();
+                let src = iph.source();
+                let dst = iph.destination();
+                let proto = iph.protocol();
+                let t_len = iph.total_len();
+                let p_len = iph.payload_len();
+
                 if proto != TCP_PROTOCOL {
                     println!("skipping a non tcp packet, proto: {:?}", proto);
                     continue;
@@ -41,16 +42,18 @@ fn main() -> Result<(), io::Error> {
 
                 // println!("{:x?}", ip_buf);
 
-                match etherparse::TcpHeaderSlice::from_slice(&ip_buf[ip_header_size..]) {
-                    Ok(tcp_header) => {
-                        println!("{:?}\n", tcp_header.to_header());
+                match etherparse::TcpHeaderSlice::from_slice(&buf[ip_hr_of + ip_hr_sz..nbytes]) {
+                    Ok(tcph) => {
+                        println!("{:?}\n", tcph.to_header());
+
+                        let data_start = ip_hr_of + iph.slice().len() + tcph.slice().len();
 
                         eprintln!(
                             "{:?}->{:?} {}b of tcp to port {}",
                             src,
                             dst,
-                            tcp_header.slice().len(),
-                            tcp_header.destination_port()
+                            tcph.slice().len(),
+                            tcph.destination_port()
                         )
                     }
                     Err(e) => eprintln!("tcp header parse error: {:?}", e),
