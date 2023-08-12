@@ -5,3 +5,5 @@
 > sudo tshark -i tun0
 
 > ping -I tun0 192.168.0.2
+
+> ls src/* | entr -r "./run.sh"
