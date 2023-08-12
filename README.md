@@ -6,4 +6,6 @@
 
 > ping -I tun0 192.168.0.2
 
-> ls src/* | entr -r "./run.sh"
+> ls src/* | entr -ncr "./run.sh"
+
+> ls target/*/trust | entr -ncr tshark -i tun0

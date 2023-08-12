@@ -1,18 +1,28 @@
-use std::io;
+use std::{collections::HashMap, io, net::Ipv4Addr};
 use tun_tap;
 
 const ETHERTYPE_IPV4: u16 = 0x0800;
 const TCP_PROTOCOL: u8 = 0x06;
 
+pub mod tcp_state;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct Quad {
+    src: (Ipv4Addr, u16),
+    dst: (Ipv4Addr, u16),
+}
+
 fn main() -> Result<(), io::Error> {
+    let mut connections: HashMap<Quad, tcp_state::State> = Default::default();
+
     let nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
-    // let mut buf = [0u8; 1504];
     let mut buf = [0u8; 1504];
 
     loop {
         let nbytes = nic.recv(&mut buf[..])?;
         let ether_flags = u16::from_be_bytes([buf[0], buf[1]]);
         let ether_proto = u16::from_be_bytes([buf[2], buf[3]]);
+
         if ether_proto != ETHERTYPE_IPV4 {
             // only ipv4
             continue;
@@ -42,19 +52,21 @@ fn main() -> Result<(), io::Error> {
 
                 // println!("{:x?}", ip_buf);
 
-                match etherparse::TcpHeaderSlice::from_slice(&buf[ip_hr_of + ip_hr_sz..nbytes]) {
+                match etherparse::TcpHeaderSlice::from_slice(
+                    &buf[ip_hr_of + iph.slice().len()..nbytes],
+                ) {
                     Ok(tcph) => {
                         println!("{:?}\n", tcph.to_header());
 
                         let data_start = ip_hr_of + iph.slice().len() + tcph.slice().len();
 
-                        eprintln!(
-                            "{:?}->{:?} {}b of tcp to port {}",
-                            src,
-                            dst,
-                            tcph.slice().len(),
-                            tcph.destination_port()
-                        )
+                        connections
+                            .entry(Quad {
+                                src: (src.into(), tcph.source_port()),
+                                dst: (dst.into(), tcph.destination_port()),
+                            })
+                            .or_default()
+                            .on_packet(iph, tcph, &buf[data_start..nbytes]);
                     }
                     Err(e) => eprintln!("tcp header parse error: {:?}", e),
                 }
