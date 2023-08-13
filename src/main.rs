@@ -13,7 +13,7 @@ struct Quad {
 }
 
 fn main() -> Result<(), io::Error> {
-    let mut connections: HashMap<Quad, tcp_state::State> = Default::default();
+    let mut connections: HashMap<Quad, tcp_state::Connection> = Default::default();
 
     let mut nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
     let mut buf = [0u8; 1504];
@@ -60,7 +60,7 @@ fn main() -> Result<(), io::Error> {
 
                         let data_start = ip_hr_of + iph.slice().len() + tcph.slice().len();
 
-                        connections
+                        let send_byte: usize = connections
                             .entry(Quad {
                                 src: (src.into(), tcph.source_port()),
                                 dst: (dst.into(), tcph.destination_port()),
