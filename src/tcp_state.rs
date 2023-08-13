@@ -75,25 +75,25 @@ struct ReceiveSequenceSpace {
     irs: u32,
 }
 
-impl Default for Connection {
-    fn default() -> Self {
-        dbg!("connection default");
-        Connection {
-            state: State::Listen,
-            recv: Default::default(),
-            send: Default::default(),
-            // ..Default::default()
-        }
-    }
-}
+// impl Default for Connection {
+//     fn default() -> Self {
+//         dbg!("connection default");
+//         Connection {
+//             state: State::Listen,
+//             recv: Default::default(),
+//             send: Default::default(),
+//             // ..Default::default()
+//         }
+//     }
+// }
 impl Connection {
-    pub fn on_packet(
-        &mut self,
+    pub fn accept(
+        // &mut self,
         nic: &mut tun_tap::Iface,
         iph: Ipv4HeaderSlice,
         tcph: TcpHeaderSlice,
         data: &[u8],
-    ) -> Result<usize> {
+    ) -> Result<Option<Self>> {
         eprintln!(
             "{:?}:{:?} -> {:?}:{:?} {}b of tcp, t_h_len: {}\n",
             iph.source_addr(),
@@ -105,72 +105,81 @@ impl Connection {
         );
 
         let mut buf = [0u8; 1500];
-        match self.state {
-            State::Closed => {
-                log::debug!("matched closed");
-                return Ok(1);
-            }
-            State::Listen => {
-                log::debug!("got packet to listenening");
-                if !tcph.syn() {
-                    log::debug!("droping packet, only accept SYN");
-                    return Ok(2);
-                }
-
-                // keep track of sender info
-                self.recv.irs = tcph.sequence_number();
-                self.recv.nxt = tcph.sequence_number() + 1;
-                self.recv.wnd = tcph.window_size();
-
-                // keep track of our info
-                self.send.iss = 0;
-                self.send.una = self.send.iss;
-                self.send.nxt = self.send.una + 1;
-                self.send.wnd = 10;
-
-                // need to establish a connection
-                let mut syn_ack = TcpHeader::new(
-                    tcph.destination_port(),
-                    tcph.source_port(),
-                    self.send.iss,
-                    self.send.wnd,
-                );
-                syn_ack.acknowledgment_number = tcph.sequence_number() + 1;
-                syn_ack.syn = true;
-                syn_ack.ack = true;
-
-                let mut syn_ack_ip_packet = Ipv4Header::new(
-                    syn_ack.header_len(),
-                    64,
-                    // etherparse::IpTrafficClass::Tcp,
-                    6,
-                    iph.destination(),
-                    iph.source(),
-                );
-
-                let ip_hr_of = 4;
-                let unwritten = {
-                    let mut unwritten = &mut buf[ip_hr_of..];
-                    syn_ack_ip_packet.write(&mut unwritten).unwrap();
-                    syn_ack.write(&mut unwritten).unwrap();
-                    unwritten.len()
-                };
-
-                // println!("{:?}", &buf[..buf.len() - unwritten]);
-
-                // dbg!(&buf.len(), &unwritten);
-                // dbg!(&syn_ack_ip_packet.header_len(), &syn_ack.header_len());
-                // nic.send(&buf[..buf.len() - unwritten + 4]);
-                nic.send(
-                    &buf[..syn_ack_ip_packet.header_len()
-                        + syn_ack.header_len() as usize
-                        + ip_hr_of],
-                )
-            }
-            _ => {
-                println!("_ => ");
-                Ok(0)
-            }
+        log::debug!("got packet to listenening");
+        if !tcph.syn() {
+            log::debug!("droping packet, only accept SYN");
+            return Ok(None);
         }
+
+        let iss = 0;
+        let mut c = Connection {
+            state: State::SynRcvd,
+            recv: ReceiveSequenceSpace {
+                irs: tcph.sequence_number(),
+                nxt: tcph.sequence_number() + 1,
+                wnd: tcph.window_size(),
+                up: false,
+            },
+
+            send: SendSequenceSpace {
+                iss,
+                una: iss,
+                nxt: iss + 1,
+                wnd: 10,
+                up: false,
+
+                wl1: 0,
+                wl2: 0,
+            },
+        };
+
+        // building syn,ack to sender
+        let mut syn_ack = TcpHeader::new(
+            tcph.destination_port(),
+            tcph.source_port(),
+            c.send.iss,
+            c.send.wnd,
+        );
+        syn_ack.acknowledgment_number = tcph.sequence_number() + 1;
+        syn_ack.syn = true;
+        syn_ack.ack = true;
+
+        let mut syn_ack_ip_packet = Ipv4Header::new(
+            syn_ack.header_len(),
+            64,
+            // etherparse::IpTrafficClass::Tcp,
+            6,
+            iph.destination(),
+            iph.source(),
+        );
+
+        syn_ack.checksum = syn_ack.calc_checksum_ipv4(&syn_ack_ip_packet, &[]).unwrap();
+        let ip_hr_of = 0;
+        let unwritten = {
+            let mut unwritten = &mut buf[ip_hr_of..];
+
+            syn_ack_ip_packet.write(&mut unwritten).unwrap();
+            syn_ack.write(&mut unwritten).unwrap();
+            unwritten.len()
+        };
+
+        println!(
+            "{:?}",
+            &buf[..syn_ack_ip_packet.header_len() + syn_ack.header_len() as usize + ip_hr_of]
+        );
+
+        nic.send(&buf[..syn_ack_ip_packet.header_len() + syn_ack.header_len() as usize + ip_hr_of]);
+        Ok(Some(c))
+    }
+
+    pub fn on_packet(
+        &mut self,
+        nic: &mut tun_tap::Iface,
+        iph: Ipv4HeaderSlice,
+        tcph: TcpHeaderSlice,
+        data: &[u8],
+    ) -> Result<()> {
+        // unimplemented!();
+        Ok(())
     }
 }
